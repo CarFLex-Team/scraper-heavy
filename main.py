@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException
 import warnings
 from playwright.sync_api import sync_playwright
 import time
+
 warnings.filterwarnings("ignore")
 app = FastAPI(title=" Scraping API")
 
@@ -20,11 +21,13 @@ class TextInput(BaseModel):
 # =============================
 MIN_DELAY = 5     # seconds
 MAX_DELAY = 10    # seconds
-MAX_SCRAPES_PER_BROWSER = 6
+MAX_SCRAPES_PER_BROWSER = 30
 COOLDOWN_ON_BLOCK = 45  # seconds
 _playwright = None
 _browser: Optional[Browser] = None
 _scrape_count = 0
+_scrape_lock = asyncio.Lock()
+
 
 
 NEW_AUT_URL = (
@@ -69,7 +72,12 @@ async def start_browser():
     _playwright = await async_playwright().start()
     _browser = await _playwright.chromium.launch(
         headless=True,
-        args=["--disable-blink-features=AutomationControlled"]
+        args=[
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--single-process",
+            "--disable-blink-features=AutomationControlled",
+        ]
     )
     _scrape_count = 0
     print("✅ Browser started")
@@ -170,6 +178,7 @@ async def scrape_autotrader_once():
         }
 
     finally:
+        await page.close()
         await context.close()
 
         # Human-like delay
@@ -204,7 +213,8 @@ def read_root():
 @app.get("/scrape_new_autotrader_listings")
 async def scrape():
     try:
-        return await scrape_autotrader_once()
+        async with _scrape_lock:  # <- acquire lock
+            return await scrape_autotrader_once()
     except Exception as e:
         await restart_browser()
         raise HTTPException(
