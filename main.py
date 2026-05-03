@@ -26,7 +26,6 @@ COOLDOWN_ON_BLOCK = 45  # seconds
 _playwright = None
 _browser: Optional[Browser] = None
 _scrape_count = 0
-_scrape_lock = asyncio.Lock()
 
 
 
@@ -72,12 +71,7 @@ async def start_browser():
     _playwright = await async_playwright().start()
     _browser = await _playwright.chromium.launch(
         headless=True,
-        args=[
-            "--no-sandbox",
-            "--disable-dev-shm-usage",
-            "--single-process",
-            "--disable-blink-features=AutomationControlled",
-        ]
+       args=["--disable-blink-features=AutomationControlled"]
     )
     _scrape_count = 0
     print("✅ Browser started")
@@ -213,8 +207,8 @@ def read_root():
 @app.get("/scrape_new_autotrader_listings")
 async def scrape():
     try:
-        async with _scrape_lock:  # <- acquire lock
-            return await scrape_autotrader_once()
+      
+        return await scrape_autotrader_once()
     except Exception as e:
         await restart_browser()
         raise HTTPException(
